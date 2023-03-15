@@ -17,3 +17,4 @@ derive-visitor-macros = { version = "0.3.0", path = "../derive-visitor-macros" }
 
 [features]
 std-types-drive = []
+eyre = ["derive-visitor-macros/eyre"]

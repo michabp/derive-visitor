@@ -47,7 +47,7 @@ fn test_containers() {
     top.list_field.push_back(CountMe1);
     top.option_field = Some(CountMe2("beautiful".to_string()));
     let mut test_visitor = TestVisitor::default();
-    top.drive(&mut test_visitor);
+    top.drive(&mut test_visitor).unwrap();
 
     // Count1:
     //   tuple: 3
@@ -88,7 +88,7 @@ fn test_containers_mut() {
         }
     }
 
-    top.drive_mut(&mut Censor);
+    top.drive_mut(&mut Censor).unwrap();
     assert_eq!(top.map_field.get(&CountMe1).unwrap().0, "censored");
     assert_eq!(top.option_field, Some(CountMe2("censored".to_string())));
 }

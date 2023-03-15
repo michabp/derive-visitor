@@ -70,7 +70,7 @@ fn extract_meta(attrs: Vec<Attribute>, attr_name: &str) -> Result<Option<Meta>> 
     macro_attrs.pop().map(parse_meta).transpose()
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct Params(HashMap<Path, Meta>);
 
 impl Params {
@@ -142,6 +142,7 @@ impl Iterator for Params {
     }
 }
 
+#[derive(Debug)]
 enum Param {
     Unit(Path, Span),
     StringLiteral(Path, Span, LitStr),
@@ -237,7 +238,19 @@ fn visitor_method_name_from_param(param: Param, path: &Path, event: &str) -> Res
 }
 
 fn impl_visitor(input: DeriveInput, mutable: bool) -> Result<TokenStream> {
-    let params = Params::from_attrs(input.attrs, "visitor")?
+    let mut params = Params::from_attrs(input.attrs, "visitor")?;
+    let error = params.param("error")?;
+    let has_result = error.is_some();
+    let error_type = if let Some(Param::NestedParams(_, _, params)) = error {
+        if let Param::Unit(error, _) = params.into_iter().next().unwrap()? {
+            error.to_token_stream()
+        } else {
+            quote! { ::derive_visitor::NoError }
+        }
+    } else {
+        quote! { ::derive_visitor::NoError }
+    };
+    let params = params
         .map_ok(|param| {
             let path = param.path().clone();
 
@@ -309,7 +322,7 @@ fn impl_visitor(input: DeriveInput, mutable: bool) -> Result<TokenStream> {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     let routes = params
         .into_iter()
-        .map(|(path, item_params)| visitor_route(&path, item_params, mutable));
+        .map(|(path, item_params)| visitor_route(&path, item_params, mutable, has_result));
     let impl_trait = Ident::new(
         if mutable { "VisitorMut" } else { "Visitor" },
         Span::call_site(),
@@ -320,28 +333,39 @@ fn impl_visitor(input: DeriveInput, mutable: bool) -> Result<TokenStream> {
         None
     };
     Ok(quote! {
-        impl #impl_generics ::derive_visitor::#impl_trait for #name #ty_generics #where_clause {
-            fn visit(&mut self, item: & #mut_modifier dyn ::std::any::Any, event: ::derive_visitor::Event) {
+        impl #impl_generics ::derive_visitor::#impl_trait<#error_type> for #name #ty_generics #where_clause {
+            fn visit(&mut self, item: & #mut_modifier dyn ::std::any::Any, event: ::derive_visitor::Event) -> ::std::result::Result<(), #error_type> {
                 #(
                     #routes
                 )*
+                Ok(())
             }
         }
     })
 }
 
-fn visitor_route(path: &Path, item_params: VisitorItemParams, mutable: bool) -> TokenStream {
+fn visitor_route(
+    path: &Path,
+    item_params: VisitorItemParams,
+    mutable: bool,
+    has_result: bool,
+) -> TokenStream {
+    let try_result = if has_result {
+        quote! { ? }
+    } else {
+        Default::default()
+    };
     let enter = item_params.enter.map(|method_name| {
         quote! {
             ::derive_visitor::Event::Enter => {
-                self.#method_name(item);
+                self.#method_name(item) #try_result;
             }
         }
     });
     let exit = item_params.exit.map(|method_name| {
         quote! {
             ::derive_visitor::Event::Exit => {
-                self.#method_name(item);
+                self.#method_name(item) #try_result;
             }
         }
     });
@@ -385,7 +409,7 @@ fn impl_drive(mut input: DeriveInput, mutable: bool) -> Result<TokenStream> {
         None
     } else {
         Some(quote! {
-            ::derive_visitor::#visitor::visit(visitor, self, ::derive_visitor::Event::Enter);
+            ::derive_visitor::#visitor::visit(visitor, self, ::derive_visitor::Event::Enter)?;
         })
     };
 
@@ -393,7 +417,7 @@ fn impl_drive(mut input: DeriveInput, mutable: bool) -> Result<TokenStream> {
         None
     } else {
         Some(quote! {
-            ::derive_visitor::#visitor::visit(visitor, self, ::derive_visitor::Event::Exit);
+            ::derive_visitor::#visitor::visit(visitor, self, ::derive_visitor::Event::Exit)?;
         })
     };
 
@@ -444,10 +468,11 @@ fn impl_drive(mut input: DeriveInput, mutable: bool) -> Result<TokenStream> {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
     Ok(quote! {
         impl #impl_generics ::derive_visitor::#impl_trait for #name #ty_generics #where_clause {
-            fn #method<V: ::derive_visitor::#visitor>(& #mut_modifier self, visitor: &mut V) {
+            fn #method<V: ::derive_visitor::#visitor<E>, E>(& #mut_modifier self, visitor: &mut V) -> ::std::result::Result<(), E> {
                 #enter_self
                 #drive_fields
                 #exit_self
+                Ok(())
             }
         }
     })
@@ -580,7 +605,7 @@ fn drive_field(value_expr: &TokenStream, field: Field, mutable: bool) -> Result<
     )?;
 
     Ok(quote! {
-        #drive_fn(#value_expr, visitor);
+        #drive_fn(#value_expr, visitor)?;
     })
 }
 

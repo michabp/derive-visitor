@@ -19,3 +19,4 @@ itertools = "0.10.1"
 proc-macro2 = "1.0.28"
 quote = "1.0.9"
 syn = { version = "1.0.75", features = ["extra-traits"] }
+eyre = { version = "0.6.8", optional = true }

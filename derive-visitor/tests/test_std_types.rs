@@ -22,7 +22,7 @@ struct Inner {
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Visitor)]
-#[visitor(String, u32, Top<Inner>(enter))]
+#[visitor(error(std::io::Error), String, u32, Top<Inner>(enter))]
 struct TestVisitor {
     all_strings: Vec<String>,
     sum_u32: u32,
@@ -30,21 +30,27 @@ struct TestVisitor {
 }
 
 impl TestVisitor {
-    fn enter_string(&mut self, s: &str) {
+    fn enter_string(&mut self, s: &str) -> std::io::Result<()> {
         self.all_strings.push(s.to_owned());
+        Ok(())
     }
-    fn exit_string(&mut self, s: &str) {
+    fn exit_string(&mut self, s: &str) -> std::io::Result<()> {
         assert_eq!(self.all_strings.last().unwrap(), s);
+        Ok(())
     }
-    fn enter_u_32(&mut self, n: &u32) {
+    fn enter_u_32(&mut self, n: &u32) -> std::io::Result<()> {
         self.sum_u32 += n;
         self.enter_leave_check += n;
+        Ok(())
     }
-    fn exit_u_32(&mut self, n: &u32) {
+    fn exit_u_32(&mut self, n: &u32) -> std::io::Result<()> {
         self.enter_leave_check -= n;
         assert_eq!(self.enter_leave_check, 0);
+        Ok(())
     }
-    fn enter_top_inner(&mut self, _top: &Top<Inner>) {}
+    fn enter_top_inner(&mut self, _top: &Top<Inner>) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 #[test]
@@ -61,7 +67,7 @@ fn test_std_types() {
         vec_field: vec![1, 2, 3],
     };
     let mut test_visitor = TestVisitor::default();
-    top.drive(&mut test_visitor);
+    top.drive(&mut test_visitor).unwrap();
     assert_eq!(
         test_visitor,
         TestVisitor {

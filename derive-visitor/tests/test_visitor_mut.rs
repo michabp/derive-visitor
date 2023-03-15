@@ -40,6 +40,6 @@ fn test() {
     };
     assert_eq!(chain.depth(), 2);
     let mut cutter = ChainCutter { cut_at_depth: 1 };
-    chain.drive_mut(&mut cutter);
+    chain.drive_mut(&mut cutter).unwrap();
     assert_eq!(chain.depth(), 1);
 }
